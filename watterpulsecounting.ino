@@ -1,5 +1,72 @@
 #include "LowPower.h"
 
+/*
+example of output
+note: timestamp prefix is not part of response (added by a script) 18/01/28 11:58:33.812189; 
+#!/bin/bash
+USBD=/dev/ttyUSB0
+#LOGFILE=/tmp/log-new.txt
+LOGDIR=/mnt/flash
+LOGFILE=$LOGDIR/log-new.txt
+mkdir $LOGDIR
+mount /dev/sda1 $LOGDIR
+stty -F $USBD cs8 115200 ignbrk -brkint -icrnl -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke noflsh -ixon -crtscts
+# mel jsem problemy s tr -d '\r' zdase ze dela nejaky bufferovani
+while read LINE; do
+ echo "Original: $LINE"
+ converted=$(echo "$LINE" | tr -d '\r' | ts "%y/%m/%d %H:%M:%.S;" | tee -a $LOGFILE | grep -e '[TS];' | grep -v '*' | grep -v '!' | awk -F ';' '$2 ~ / S/{print "https://emoncms.org/input/post.json?node=8&json={studena_puls:1,studena_uroven:"$3",studena_irqcnt:"$4",studena_lapstime:"$5",studena_pulse_length:"$6"}&apikey=ecf6f775b42983244e67870436f2cd72"}; $2 ~ / T/{print "https://emoncms.org/input/post.json?node=8&json={tepla_puls:1,tepla_uroven:"$3",tepla_irqcnt:"$4",tepla_lapstime:"$5",tepla_pulse_length:"$6"}&apikey=ecf6f775b42983244e67870436f2cd72"}')
+ if [ ! -z "$converted" ]; then
+    echo "$converted" | xargs -n1 wget -O - -q
+ else 
+    echo "Skipped"
+ fi
+done < $USBD
+
+T   - tepla voda puls
+S   - studena voda puls
+*t  - irq pro teplou vodu
+*s  - irq pro studenou vodu
+!T  - prilis kraty puls (prechod z 0 na 1 na 0 a opacne)
+!S  - prilis kraty puls (prechod z 0 na 1 na 0 a opacne)
+
+ukazka na !
+18/02/02 20:06:25.695647; T;0;84;457089251;10070
+18/02/02 20:06:28.200226; *t;1;0;457089252;12
+18/02/02 20:06:29.995934; *t;0;9;457089252;1
+18/02/02 20:06:31.772860; !T;1;9;457089263;23
+18/02/02 20:06:33.551994; !T;1;9;457089263;24
+18/02/02 20:06:35.293656; !T;1;9;457089264;25
+18/02/02 20:06:37.051467; !T;1;9;457089265;25
+18/02/02 20:06:38.905891; *t;0;2;457089266;1
+18/02/02 20:06:40.693749; *t;0;44;457089267;0
+18/02/02 20:06:42.611590; *t;0;46;457089268;2
+
+
+normalni vystup
+18/01/28 11:58:33.812189; 19:13:32
+18/01/28 11:58:35.627988; S/V;finished_state;IRQ_Cnt;laps_time;pulse_duration
+18/02/03 14:46:18.405012; *t;1;184;524348107;1
+18/02/03 14:46:20.173257; *t;1;193;524348108;1
+18/02/03 14:46:21.957223; *t;0;202;524348109;1
+18/02/03 14:46:23.720372; *t;1;208;524348110;1
+18/02/03 14:46:25.492433; T;0;208;524348120;5720935
+18/02/03 14:46:28.002567; *t;1;0;524348121;12
+18/02/03 14:46:29.741161; *t;1;1;524355990;1
+18/02/03 14:46:31.503145; *t;0;45;524355990;1
+18/02/03 14:46:33.253787; *t;0;47;524355991;1
+18/02/03 14:46:35.025499; *t;0;48;524355992;1
+18/02/03 14:46:36.858838; *t;0;55;524355993;1
+18/02/03 14:46:38.704557; *t;1;62;524355994;1
+18/02/03 14:46:40.493617; *t;0;69;524355997;1
+18/02/03 14:46:42.365130; *t;0;72;524355998;1
+18/02/03 14:46:44.108207; *t;0;74;524356000;1
+18/02/03 14:46:45.841418; *t;0;76;524356001;1
+18/02/03 14:46:47.648128; *t;0;84;524356002;2
+18/02/03 14:46:49.469368; *t;0;112;524356004;3
+18/02/03 14:46:51.241391; *t;0;114;524356006;2
+18/02/03 14:46:53.013456; T;1;114;524356015;7906
+18/02/03 14:46:55.534536; *t;0;0;524356016;12
+
 
 #define pinSV 2
 #define pinSV_irq 0 //IRQ that matches to pin 2
