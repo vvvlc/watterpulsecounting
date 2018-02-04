@@ -15,3 +15,13 @@ detekce otoceni kolecka (toho co vypada jako hodiny v pravo dole)
     - 20ms = 1/50 = 0.020 trva jedno otoceni kolecka
     - 13ms = 0.02*0.65  je odraziva cast
     - 7ms = je cerna cast
+
+```
+cold_watter_pulse_count,warm_watter_pulse_count,timestamp,timestamp_since_last_send
+*s;0;30;74994;1
+!S;1;30;75005;111
+33 0 75005 60004
+!S;1;30;75006;112
+*s;1;2;75008;0
+*s;1;28;75009;1
+```

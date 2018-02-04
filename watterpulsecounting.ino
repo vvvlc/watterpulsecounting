@@ -1,26 +1,21 @@
 #include "LowPower.h"
 
 /*
+ * update of program in arduino via command line 
+ * avrdude-original  -v -patmega328p -carduino -P/dev/ttyUSB0 -b115200 -D -Uflash:w:watterpulsecounting.ino.hex:i 
+ */
+
+/*Change log
+ * 18/02/04 - added data aggregation module sends update after 15 ms, format of sent data
+ * colde_watter_pulse_count,warm_watter_pulse_count, 
+ * 32 0 15001 0
+ * *s;1;89;15009;1
+ * 
+ */
+
+/*
 example of output
 note: timestamp prefix is not part of response (added by a script) 18/01/28 11:58:33.812189; 
-#!/bin/bash
-USBD=/dev/ttyUSB0
-#LOGFILE=/tmp/log-new.txt
-LOGDIR=/mnt/flash
-LOGFILE=$LOGDIR/log-new.txt
-mkdir $LOGDIR
-mount /dev/sda1 $LOGDIR
-stty -F $USBD cs8 115200 ignbrk -brkint -icrnl -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke noflsh -ixon -crtscts
-# mel jsem problemy s tr -d '\r' zdase ze dela nejaky bufferovani
-while read LINE; do
- echo "Original: $LINE"
- converted=$(echo "$LINE" | tr -d '\r' | ts "%y/%m/%d %H:%M:%.S;" | tee -a $LOGFILE | grep -e '[TS];' | grep -v '*' | grep -v '!' | awk -F ';' '$2 ~ / S/{print "https://emoncms.org/input/post.json?node=8&json={studena_puls:1,studena_uroven:"$3",studena_irqcnt:"$4",studena_lapstime:"$5",studena_pulse_length:"$6"}&apikey=ecf6f775b42983244e67870436f2cd72"}; $2 ~ / T/{print "https://emoncms.org/input/post.json?node=8&json={tepla_puls:1,tepla_uroven:"$3",tepla_irqcnt:"$4",tepla_lapstime:"$5",tepla_pulse_length:"$6"}&apikey=ecf6f775b42983244e67870436f2cd72"}')
- if [ ! -z "$converted" ]; then
-    echo "$converted" | xargs -n1 wget -O - -q
- else 
-    echo "Skipped"
- fi
-done < $USBD
 
 T   - tepla voda puls
 S   - studena voda puls
@@ -60,13 +55,16 @@ normalni vystup
 18/02/03 14:46:40.493617; *t;0;69;524355997;1
 18/02/03 14:46:42.365130; *t;0;72;524355998;1
 18/02/03 14:46:44.108207; *t;0;74;524356000;1
+
 18/02/03 14:46:45.841418; *t;0;76;524356001;1
 18/02/03 14:46:47.648128; *t;0;84;524356002;2
 18/02/03 14:46:49.469368; *t;0;112;524356004;3
 18/02/03 14:46:51.241391; *t;0;114;524356006;2
 18/02/03 14:46:53.013456; T;1;114;524356015;7906
 18/02/03 14:46:55.534536; *t;0;0;524356016;12
+*/
 
+#define DEBUG_MSG
 
 #define pinSV 2
 #define pinSV_irq 0 //IRQ that matches to pin 2
@@ -74,12 +72,24 @@ normalni vystup
 #define pinTV 3
 #define pinTV_irq 1 //IRQ that matches to pin 3
 
+#define MIN_PULSE_TIME_MS 350  // delka cerneho ramecku je 700ms 
+#define DEBOUNCE_TIME_MS 10
+unsigned long lpulse = 0;
+
+#define REPORT_INTERVAL 15000 // report count pulses in 15sec interval
+unsigned long last_reported_time=0;
+
 typedef struct {
   volatile int level;
   volatile int pulseCount;
   volatile unsigned long time;
 } EVENT;
 
+/*
+ * state variable for aggregation
+ */
+int SV_pulse_count = 0;
+int TV_pulse_count = 0;
 
 EVENT irqEventTV = {0, 0, 0} , irqEventSV = {0, 0, 0};
 EVENT lastEventTV = {0, 0, 0}, lastEventSV = {0, 0, 0};
@@ -126,23 +136,6 @@ void IRQcounterSV() {
   updateEvent(&irqEventSV);
 }
 
-#define MIN_PULSE_TIME_MS 350  // delka cerneho ramecku je 700ms 
-#define DEBOUNCE_TIME_MS 10
-unsigned long lpulse = 0;
-
-/*
- * returns true if puls was accepted , false when rejected
- */
-int pulse(EVENT *event, char type ) {
-  if (millis()-event->time<MIN_PULSE_TIME_MS) {
-    //reject puls it is to short
-    Serial.print('!');
-    printPulse(event, type);
-    return false;
-  }
-  printPulse(event, type);
-  return true;
-}
 
 void printPulse(EVENT *event, char type ) {
   Serial.print(type);
@@ -156,6 +149,53 @@ void printPulse(EVENT *event, char type ) {
   Serial.println(millis()-event->time);
 }
 
+/*
+ * reports pulse counts for emoncms hub
+ */
+void reportPulseCounts(){  
+  /*
+   * report data to hub
+   */
+  if ((millis()-last_reported_time>REPORT_INTERVAL) & (SV_pulse_count!=0 | TV_pulse_count!=0)) {
+   Serial.print(SV_pulse_count);Serial.print(' ');
+   Serial.print(TV_pulse_count);Serial.print(' ');
+   Serial.print(millis());Serial.print(' ');
+   Serial.print(millis()-last_reported_time);Serial.print(' ');
+
+   Serial.println();
+   //start counting from zero
+   SV_pulse_count=TV_pulse_count=0;
+   last_reported_time=millis();
+  }
+}
+
+/*
+ * returns true if puls was accepted , false when rejected
+ */
+int pulse(EVENT *event, char type ) {
+  if (millis()-event->time<MIN_PULSE_TIME_MS) {
+    //reject puls it is to short
+#ifdef DEBUG_MSG
+    Serial.print('!');
+    printPulse(event, type);
+#endif    
+    return false;
+  }
+  
+#ifdef DEBUG_MSG
+  printPulse(event, type);
+#endif    
+  /*
+   * aggregate pulses
+   */
+  if (type=='S') {
+   SV_pulse_count++;
+  } else {
+   TV_pulse_count++;
+  }
+   
+  return true;
+}
 
 void vodaCheck(EVENT *lastEvent, EVENT *irqEvent, char type, int pin) {
   EVENT currentEvent;
@@ -182,8 +222,10 @@ void vodaCheck(EVENT *lastEvent, EVENT *irqEvent, char type, int pin) {
      */
     if (currentEvent.pulseCount != lastEvent ->pulseCount) {
       //pulse(&currentEvent, lastEvent->time, type + 'a' - 'A');
+#ifdef DEBUG_MSG      
       Serial.print('*');
       printPulse(&currentEvent, type + 'a' - 'A');
+#endif          
       lastEvent ->pulseCount = currentEvent.pulseCount;
     }
 
@@ -244,5 +286,6 @@ void loop() {
   
   vodaCheck(&lastEventTV, &irqEventTV, 'T', pinTV);
   vodaCheck(&lastEventSV, &irqEventSV, 'S', pinSV);
+  reportPulseCounts();
   //delay(25);
 }
