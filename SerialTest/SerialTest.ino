@@ -36,10 +36,11 @@ void loop()
   SerialX.print(";84;");
   SerialX.print(millis());
   SerialX.println(";10070");
-
+/*
   SerialX.print("32 ");
   SerialX.print(c++);
   SerialX.print(" 0 ");
   SerialX.print(millis());
   SerialX.println(" 0");
+*/  
 }

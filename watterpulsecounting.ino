@@ -10,6 +10,7 @@
  * colde_watter_pulse_count,warm_watter_pulse_count, 
  * 32 0 15001 0
  * *s;1;89;15009;1
+ * 18/02/21 - problems with emonhub data buffer contains illegal data, probably buffer got overwritten sevral times --> DEBUG disabled  //#define DEBUG_MSG
  * 
  */
 
@@ -64,7 +65,7 @@ normalni vystup
 18/02/03 14:46:55.534536; *t;0;0;524356016;12
 */
 
-#define DEBUG_MSG
+//#define DEBUG_MSG
 
 #define pinSV 2
 #define pinSV_irq 0 //IRQ that matches to pin 2
