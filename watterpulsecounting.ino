@@ -11,7 +11,9 @@
  * 32 0 15001 0
  * *s;1;89;15009;1
  * 18/02/21 - problems with emonhub data buffer contains illegal data, probably buffer got overwritten sevral times --> DEBUG disabled  //#define DEBUG_MSG
- * 
+ * 18/02/27 - increased MIN_PULSE_TIME_MS from 350 to 600
+ * added different time constat for hot watter and cold watter  (sensor detects surplusses on hotwatter because of wrong trimmer (10K vs 1k)
+ *          - usually current max flow of watter is 5 pulses in 15sec -> SLSLS (Short, Long pulses) --> 15000=x*(3*S+2*L), where S=310 or 316, L=689 or 683 -> x = 6.499 or 5.582 --> in my flow MIN_PULSE_TIME_MS=310*5.582=1730 MS, 683 MS is for max flow
  */
 
 /*
@@ -73,8 +75,8 @@ normalni vystup
 #define pinTV 3
 #define pinTV_irq 1 //IRQ that matches to pin 3
 
-#define MIN_PULSE_TIME_MS 350  // delka cerneho ramecku je 700ms 
-#define DEBOUNCE_TIME_MS 10
+#define MIN_PULSE_TIME_MS 700 //350  // delka cerneho ramecku je 700ms 
+#define DEBOUNCE_TIME_MS 20   //10 //doba ustaleni
 unsigned long lpulse = 0;
 
 #define REPORT_INTERVAL 15000 // report count pulses in 15sec interval
