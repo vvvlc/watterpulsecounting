@@ -7,13 +7,16 @@
 
 /*Change log
  * 18/02/04 - added data aggregation module sends update after 15 ms, format of sent data
- * colde_watter_pulse_count,warm_watter_pulse_count, 
+ * colde_watter_pulse_count,warm_watter_pulse_count, milis since start, milis since last report
  * 32 0 15001 0
  * *s;1;89;15009;1
  * 18/02/21 - problems with emonhub data buffer contains illegal data, probably buffer got overwritten sevral times --> DEBUG disabled  //#define DEBUG_MSG
  * 18/02/27 - increased MIN_PULSE_TIME_MS from 350 to 600
  * added different time constat for hot watter and cold watter  (sensor detects surplusses on hotwatter because of wrong trimmer (10K vs 1k)
  *          - usually current max flow of watter is 5 pulses in 15sec -> SLSLS (Short, Long pulses) --> 15000=x*(3*S+2*L), where S=310 or 316, L=689 or 683 -> x = 6.499 or 5.582 --> in my flow MIN_PULSE_TIME_MS=310*5.582=1730 MS, 683 MS is for max flow
+ *          
+ *          -fixed bug when no interrupt -then pulse length is incorrectly calculated
+ *          -increased debause time 
  */
 
 /*
@@ -40,7 +43,28 @@ ukazka na !
 18/02/02 20:06:42.611590; *t;0;46;457089268;2
 
 
-normalni vystup
+normalni vystup - s debug
+S/V;finished_state;IRQ_Cnt;laps_S/V;finished_state;IRQ_Cnt;laps_time;pulse_duration
+*s;0;2;10211;0
+S;1;2;10232;10232
+*s;0;0;10232;22
+*s;1;5;14676;2
+S;0;5;14697;4486
+*s;1;0;14697;22
+2 0 15001 15001 
+S;1;0;16635;1960
+*s;0;1;16636;1
+*s;1;3;21105;0
+S;0;3;21126;6450
+*s;1;0;21126;22
+*s;0;2;23071;1
+*s;0;4;23072;1
+S;1;4;23092;1987
+*s;0;0;23092;22
+3 0 30002 15001 
+
+
+---
 18/01/28 11:58:33.812189; 19:13:32
 18/01/28 11:58:35.627988; S/V;finished_state;IRQ_Cnt;laps_time;pulse_duration
 18/02/03 14:46:18.405012; *t;1;184;524348107;1
@@ -67,7 +91,7 @@ normalni vystup
 18/02/03 14:46:55.534536; *t;0;0;524356016;12
 */
 
-//#define DEBUG_MSG
+#define DEBUG_MSG
 
 #define pinSV 2
 #define pinSV_irq 0 //IRQ that matches to pin 2
@@ -76,7 +100,7 @@ normalni vystup
 #define pinTV_irq 1 //IRQ that matches to pin 3
 
 #define MIN_PULSE_TIME_MS 700 //350  // delka cerneho ramecku je 700ms 
-#define DEBOUNCE_TIME_MS 20   //10 //doba ustaleni
+#define DEBOUNCE_TIME_MS 80   //10 //doba ustaleni
 unsigned long lpulse = 0;
 
 #define REPORT_INTERVAL 15000 // report count pulses in 15sec interval
@@ -159,7 +183,7 @@ void reportPulseCounts(){
   /*
    * report data to hub
    */
-  if ((millis()-last_reported_time>REPORT_INTERVAL) & (SV_pulse_count!=0 | TV_pulse_count!=0)) {
+  if ((millis()-last_reported_time>REPORT_INTERVAL) && ((SV_pulse_count!=0) || (TV_pulse_count!=0))) {
    Serial.print(SV_pulse_count);Serial.print(' ');
    Serial.print(TV_pulse_count);Serial.print(' ');
    Serial.print(millis());Serial.print(' ');
@@ -173,6 +197,7 @@ void reportPulseCounts(){
 }
 
 /*
+ * false edge filter
  * returns true if puls was accepted , false when rejected
  */
 int pulse(EVENT *event, char type ) {
@@ -200,6 +225,9 @@ int pulse(EVENT *event, char type ) {
   return true;
 }
 
+/**
+ * detects edges and sends pulses on each edge
+ */
 void vodaCheck(EVENT *lastEvent, EVENT *irqEvent, char type, int pin) {
   EVENT currentEvent;
   
@@ -208,11 +236,16 @@ void vodaCheck(EVENT *lastEvent, EVENT *irqEvent, char type, int pin) {
   sei();//enable interrupts
 
   currentEvent.level=digitalRead(pin);
-  
-   //uz ubehla doba DEBOUNCE_TIME_MS od posledniho IRQ?
-  if ((millis() - currentEvent.time > DEBOUNCE_TIME_MS) & (currentEvent.level != lastEvent->level)) { //jak dlouho to je od minuleho IRQ?
-      cli();//disable interrupts
-      irqEvent->pulseCount = 0;
+
+  /*
+   * detekce hrany + debounncing
+   *  1 jak dlouho to je od minuleho IRQ - debounding
+   *  2 preklopila se uroven signalu od minule 
+   *  pokud jsou podminky 1 a 2 splneny pak generuj puls (ktery oznacuje hranu signalu
+   */  
+  if ((millis() - currentEvent.time > DEBOUNCE_TIME_MS) && (currentEvent.level != lastEvent->level)) { 
+      cli();//disable interrupts      
+      resetEvent(irqEvent,pin);  //in case of no IRQ occurence since last report, this happens, when 
       sei();//enable interrupts
       
       
@@ -222,16 +255,15 @@ void vodaCheck(EVENT *lastEvent, EVENT *irqEvent, char type, int pin) {
   }  else {
     /*
      * this branch is only for debugginig to see what happends during debouncing period
+     * print data only if there is change in number of irq events
      */
-    if (currentEvent.pulseCount != lastEvent ->pulseCount) {
-      //pulse(&currentEvent, lastEvent->time, type + 'a' - 'A');
 #ifdef DEBUG_MSG      
+    if ((currentEvent.pulseCount != lastEvent ->pulseCount)) {
       Serial.print('*');
       printPulse(&currentEvent, type + 'a' - 'A');
-#endif          
       lastEvent ->pulseCount = currentEvent.pulseCount;
     }
-
+#endif          
   }
 }
 
