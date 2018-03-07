@@ -91,7 +91,7 @@ S;1;4;23092;1987
 18/02/03 14:46:55.534536; *t;0;0;524356016;12
 */
 
-#define DEBUG_MSG
+//#define DEBUG_MSG
 
 #define pinSV 2
 #define pinSV_irq 0 //IRQ that matches to pin 2
@@ -99,7 +99,7 @@ S;1;4;23092;1987
 #define pinTV 3
 #define pinTV_irq 1 //IRQ that matches to pin 3
 
-#define MIN_PULSE_TIME_MS 700 //350  // delka cerneho ramecku je 700ms 
+#define MIN_PULSE_TIME_MS 600 //350  // delka cerneho ramecku je 700ms (600 + debounce time 80 je cca 680
 #define DEBOUNCE_TIME_MS 80   //10 //doba ustaleni
 unsigned long lpulse = 0;
 
